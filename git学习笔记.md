@@ -746,3 +746,5 @@ github上创建远程仓库 不要勾选init
 将id_rsa.pub内的内容拷贝到GitHub中
 
 <img src="git学习笔记.assets/image-20201104210035010.png" alt="image-20201104210035010" style="zoom:80%;" />
+
+推送的时候使用git@github.com:bluesky-2019/LearningNotes.git
