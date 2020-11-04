@@ -499,7 +499,7 @@ github上创建远程仓库 不要勾选init
 
 ### 推送本地项目到远程仓库
 
-`git push <remote-name> <branch-name>`
+`git push <remote-name> <branch-name>` 同时会生成远程跟踪分支 当其他开发者 fetch的时候 这个分支并不会在git branch中存在 需要自己创建一个本地分支（根据远程跟踪分支的SHA-1）
 
 ### 拉取远程仓库数据
 
@@ -507,10 +507,92 @@ github上创建远程仓库 不要勾选init
 
 ​	注意：git fetch 命令会将数据拉取到你的本地仓库 它并不会自动合并或修改你当前的分支 当准备好时必须手动将其合并
 
-​	比如远程仓库别名是taobao   git fetch 后 会有一个远程跟踪分支 taobao/master fetch下载下来的东西在这个分支 随后需要使用git merge进行合并到master分支上
+​	比如远程仓库别名是taobao   git fetch 后 会有一个远程跟踪分支 taobao/master fetch下载下来的东西在这个分支 随后需要使用git merge进行合并到master分支上	git merge taobao/master
+
+#### 远程分支
+
+#### 远程跟踪分支
+
+#### 本地分支
 
 ### 克隆远程仓库
 
 `git clone url`
 
 默认克隆时为远程仓库起的别名为origin  如果运行`git clone -o taobao url` 那么该远程仓库别名为taobao
+
+### 跟踪分支
+
+​	从一个远程跟踪分支（origin/master）检出一个本地分支会自动创建一个叫做“跟踪分支”（有时候也叫做“上游分支”：master） 只有**主分支**并且 **克隆**时才会自动创建跟踪分支
+
+​	跟踪分支是与远程分支有直接关系的本地分支。如果在一个跟踪分支上输入`git pull`,Git能自动地识别去哪个服务器上抓取、合并到哪个分支
+
+​	如果你愿意的话可以设置其他的跟踪分支，或者不跟踪master分支
+
+​	`git checkout -b [bransh] [remotename]/[branch]`
+
+​	`git checkout -b serverfix origin/serverfix`
+
+​	Git提供了 --track 快捷方式
+
+​	`git checkout --track origin/serverfix`
+
+​	设置已有的本地分支分钟一个刚刚拉取下来的远程分支，或者想要修改正在跟踪的跟踪分支，可以在任意时候使用-u选项运行git branch来显示地设置
+
+​	`git branch -u origin/serverfix` (--set-upstream-to)
+
+​	查看设置的所有跟踪分支
+
+​	`git branch -vv`
+
+### 推送其他分支
+
+当你想要公开分享一个分支时，需要将其推送到有写入权限的远程仓库上。本地的分支并不会自动与远程仓库同步 你需要显示地推送想要分享的分支
+
+`git push origin sererfix` 这里有些工作被简化了 Git自动将serverfix分支名字展开为refs/heads/serverfix:refs/heads/serverfix 相当于它说 推送本地的serverfix分支，将其作为远程仓库的serverfix分支
+
+`git push origin serverfix:awesomebranch` 如果并不想让远程仓库上的分支叫做serverfix 可以运行以上命令将本地分支serverfix分支推送到远程仓库上的awesomebranch分支
+
+下一次其他协作者通过`git fetch origin`从服务器上拉取数据时，它们会再本地生成一个远程跟踪分支 origin/serverfix，指向服务器的serverfix分支的引用。 **注意的一点当抓取到新的远程跟踪分支时，本地不会自动生成一份可编辑的副本。也就是本地不会有一个新的serverfix分支，只有一个不可以修改的origin/serverfix指针** 这个时候可以使用 `git checkout -b serverfix origin/serverfix` 来创建一个副本 也可以使用 `git merge origin/serverfix`将这些工作合并到当前所在的分支
+
+### 删除远程分支
+
+​	`git push origin --delete serverfix`
+
+​	删除远程分支
+
+​	`git remote prune origin --dry-run`
+
+​	列出仍在远程跟踪分支但是远程已删除的无用分支
+
+​	`git remote prune origin`
+
+​	清除上面命令列出来的远程跟踪
+
+## pull request流程
+
+如果想要参与某个项目，但是并没有推送权限，这时可以对这个项目进行Fork Github将在你的空间中创建一个完全属于你的项目副本，且你对其具有推送权限。通过这种方式，项目的管理者不再需要忙着添加用户到贡献者列表并给予它们推送权限。人们可以派生这个项目，将修改推送到派生出的项目副本中，并通过创建合并请求（Pull Request）来让它们的改动进入原版本库
+
+流程：
+
+ 1. 从master分支中创建一个新分支（自己fork的项目）
+
+ 2. 提交一些修改来改进项目（自己fork的项目）
+
+ 3. 将这个分支推送到GitHub上（自己fork的项目）
+
+ 4. 创建一个合并请求
+
+ 5. 讨论，根据实际情况继续修改
+
+ 6. 项目的拥有者合并或关闭你的合并请求
+
+    
+
+注意：每次在发起新的Pull Request时，要去拉取最新的源仓库的代码而不是自己fork的那个仓库
+
+​	git remote add <shortname> <repo url>
+
+​	git fetch <shortname>
+
+​	git merge 对应的远程跟踪分支
