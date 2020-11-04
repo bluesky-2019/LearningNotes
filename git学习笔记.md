@@ -1,5 +1,13 @@
 # git学习笔记
 
+## Git特点
+
+1. 直接记录快照，而非差异比较
+2. 近乎所有操作都是本地执行
+3. 时刻保持数据完整性
+4. 多数操作仅添加数据
+5. 文件的三种状态
+
 ## 配置
 
 ### 配置基本信息
@@ -46,7 +54,33 @@ git config --global alias.br branch
 git config --global alias.ci commit
 ```
 
+### 配置忽略某些文件
 
+创建一个名为.gitignore的文件，列出要忽略的文件模式
+
+格式规范
+
+ 1. 所有空行或者以注释符号#开头的行都会被Git忽略
+
+ 2. 可以使用标准的glob模式匹配
+
+     1. *代表匹配任意个字符
+
+     2. ？代表匹配任意一个字符
+
+     3. **代表匹配多级目录
+
+        匹配模式前跟反斜杠（/）这个斜杠代表项目根目录
+
+        匹配模式最后跟分斜杠（/）说明要忽略的是目录
+
+        要忽略指定模式以外的文件或目录，可以在模式前加上（！）取反
+
+        例子：
+
+        1. /dist/ 忽略根目录下的dist目录
+        2. node_modules/ 不管在根目录还是子目录中 node_modules都被忽略
+        3. *.a    !lib.a  忽略所有.a结尾的文件但是lib.a除外
 
 
 
@@ -162,6 +196,12 @@ git update-index --add new.txt
 ```shell
 echo 'first commit' | git commit-tree 43bd1cff5fe2dcc90c3c0b4c66c9a5c19175e617
 ```
+
+
+
+![image-20201104171529579](git学习笔记.assets/image-20201104171529579.png)
+
+**一个提交对象 对应一个树对象 一个树对象可以包含多个git对象**
 
 ## Git高层操作
 
@@ -402,9 +442,7 @@ $ git branch
 
 当出现冲突时 解决掉冲突，然后git add ./ 最后再commit就可以
 
-
-
-### Git存储
+## Git存储
 
 有时，当你的项目的在一个分支上工作了一段时间，这时有需要切换到另外一个分支做点事情。往往需要先将当前分支的修改进行一次提交。针对这个问题我们可以使用Git stash命令
 
@@ -424,13 +462,13 @@ git stash drop		加上将要移除的储藏的名字来移除它
 
 ​	撤回工作目录中的修改
 
-​	`git checkout -- <file>...`
+​	`git checkout -- <file>...` 跟这个命令比较像 `git reset --hard HEAD`
 
 ### 暂存区
 
 ​	将暂存区中的修改unstaged
 
-​	`git reset HEAD <file>`
+​	`git reset HEAD <file>`  相当于省略了 [--mixed]
 
 ​	`git restore --staged new.txt`
 
@@ -445,8 +483,108 @@ git stash drop		加上将要移除的储藏的名字来移除它
  3. 工作区、暂存区和版本库都撤销到上次提交 意味着上次提交将丢失 `git reset --hard HEAD^`
 
     注意：--hard是reset命令唯一的危险用法，它也是Git会真正销毁数据的仅有的几个操作之一。其他形式的reset调用都可以轻松销毁，但是--hard选项不能，因为它强制覆盖了工作目录中的文件
+    
+    
+    
+    `git reset --soft HEAD^ `	版本库中的内容回到上一个版本  工作目录和暂存区中没有变化
+    
+    可以通过以下的命令来查看版本库中文件的内容：
+    
+    ![image-20201104162511461](git学习笔记.assets/image-20201104162511461.png)
+    
+    通过以下命令来查看暂存区中文件的内容：
+    
+    ![image-20201104162957319](git学习笔记.assets/image-20201104162957319.png)
+    
+    `git reset --mixed HEAD^`  版本库和暂存区的内容回到上一个版本  工作目录中没有变化
+    
+    `git reset --hard HEAD^`    版本库、暂存区和工作目录的都直接回到上个版本
 
 
+
+​	如果想恢复某个版本的文件 可以使用 git checkout <file> hashcode
+
+### 路径reset
+
+​	reset还可以作用于文件 与版本commithash不一样的是 reset文件不会修改HEAD 但是暂存区和工作目录是会被修改的
+
+​	git reset file.txt  (其实就是git reset --mixed HEAD file.txt)  工作目录未变化  暂存区变成上个版本的
+
+​	**只有--mixed可以加路径**
+
+​	
+
+​	如果像让file.txt 回退到过去的某一个版本 那么
+
+ 	1. git reset commitHash file.txt      此时暂存区中的是 commitHash对应的内容 工作区的未改变
+ 	2. git restore test                               工作区中的内容将和暂存区一样 回退到commitHash对应的内容
+
+​	
+
+### checkout
+
+git checkout commithash   与 git reset --hard commitHash 区别
+
+1. checkout 只动 HEAD   --hard动HEAD而且带着分支一起走
+2. checkout对工作目录是安全的   --hard是强制覆盖工作目录
+
+**带路径**
+
+运行checkout的另一种方式就是指定一个文件路径，这会像reset一样不会移动HEAD。 它就像是git reset --hard [branch] file 
+
+git checkout -- filename
+
+​	相当于 git reset --hard commitHash --filename
+
+​	HEAD指针没有动 暂存区没有变化  只修改了工作目录
+
+git checkout commitHash <file>
+
+​	HEAD不会动
+
+​	暂存区和工作目录进行修改
+
+## Tag标签
+
+​	Git可以给历史中的某个提交打上标签，以示重要
+
+### 列出标签
+
+​	git tag
+
+​	git tag  -l 'v 1.8.5.*'
+
+### 创建标签
+
+#### 轻量标签
+
+​	git tag v1.4
+
+​	git tag v1.4 commitHash
+
+#### 附注标签
+
+​	附注标签是存储在Git数据库中的一个完整对象。它们是可以被校验的 其中包含打标签者的名字、电子邮件、日期
+
+​	`git tag -a v1.4 commitHash -m 'my version 1.4'`
+
+### 查看特定标签
+
+ 	`git show tagname`
+
+### 远程标签
+
+​	`git push origin tagname`
+
+​	`git push origin --tags`	一次性推送很多标签
+
+### 删除标签
+
+​	`git tag -d v1.4`
+
+### 检出标签
+
+​	`git checkout tagname`
 
 ## 团队协作
 
@@ -596,3 +734,15 @@ github上创建远程仓库 不要勾选init
 ​	git fetch <shortname>
 
 ​	git merge 对应的远程跟踪分支
+
+## SSH免密登录
+
+1. 进入用户主目录中
+2. `ssh-keygen -t rsa -C bluesky_2019@126.com` bluesky_2019@126.com GitHub上注册的邮箱
+3. 发现.ssh下面有2个文件
+
+<img src="git学习笔记.assets/image-20201104205345171.png" alt="image-20201104205345171" style="zoom:80%;" />
+
+将id_rsa.pub内的内容拷贝到GitHub中
+
+<img src="git学习笔记.assets/image-20201104210035010.png" alt="image-20201104210035010" style="zoom:80%;" />
