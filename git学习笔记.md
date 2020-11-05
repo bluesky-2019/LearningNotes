@@ -675,7 +675,7 @@ github上创建远程仓库 不要勾选init
 
 ​	`git checkout --track origin/serverfix`
 
-​	设置已有的本地分支分钟一个刚刚拉取下来的远程分支，或者想要修改正在跟踪的跟踪分支，可以在任意时候使用-u选项运行git branch来显示地设置
+​	设置已有的本地分支跟踪一个刚刚拉取下来的远程分支，或者想要修改正在跟踪的跟踪分支，可以在任意时候使用-u选项运行git branch来显示地设置
 
 ​	`git branch -u origin/serverfix` (--set-upstream-to)
 
@@ -748,3 +748,45 @@ github上创建远程仓库 不要勾选init
 <img src="git学习笔记.assets/image-20201104210035010.png" alt="image-20201104210035010" style="zoom:80%;" />
 
 推送的时候使用git@github.com:bluesky-2019/LearningNotes.git
+
+## Rebase
+
+将多个提交记录整合成一个提交记录
+
+`git rebase -i HEAD~3` 将HEAD及往前 一共3条记录合并
+
+`git rebase -i commitHash` 将commitHash ~ HEAD等多条记录合并
+
+## Gitflow工作流
+
+![image-20201104220308585](git学习笔记.assets/image-20201104220308585.png)
+
+## Git submodule
+
+本地添加子模块
+
+`git submodule add git@github.com:yanqun/B.git` 然后git会将B模块克隆到本地 随后通过git add gitcommit git push 将内容推送到远程分支
+
+
+
+A库中有B库 但是 B库push之后 A库无法直接感知，需要主动操作：
+
+更新submodule(在A库目录下Git pull 不会将submodule更新下来 需要进入到A/B目录然后再 git pull才有内容更新下来)
+
+然后submodule中的内容需要推送到远程 需要在 A目录下 git add git commit git push
+
+或者在A目录中 一次过 `git submodule foreach git pull`
+
+一般仅仅做单向操作
+
+## GitSubtree
+
+与submodule类型 但是允许做双向修改操作 A 引用B  可以在A中修改B
+
+parent工程 引用 subtree工程
+
+`git subtree --prefix=subtree add <repository> <ref>` --prefix 为子模块起名字
+
+git subtree add -P subtree2 subtree-origin master --squash  parent工程就有2份subtree-origin master
+
+--squash 减少commit的次数 合并commit 为了防止 子工程干扰父工程
