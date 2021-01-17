@@ -1,0 +1,9 @@
+实现shared_ptr
+RALL机制
+nocopyable类
+shared_ptr线程是否安全，然后出shared_ptr线程安全的两个场景代码问我
+
+编译过程
+右值引用，移动语义，右值引用的作用是不是可以完全代替左值引用呢（这里挖坑给自己跳了，我凑，被面试官问蒙了，果然学习不仔细要还债啊）
+
+说一下map跟set的底层，然后问我unoedered_map和map的区别

@@ -4,6 +4,8 @@
 
 ![image-20201105150452101](Docker.assets/image-20201105150452101.png)
 
+![image-20201109113220393](Docker.assets/image-20201109113220393.png)
+
 ## Docker安装
 
 CentOS 需要 version 7以上
@@ -895,7 +897,7 @@ COPY 		# 类似ADD命令，将文件拷贝到镜像中
 ENV			# 构建的时候设置环境变量
 ```
 
-### 实战
+### 构建自己CentOS
 
 Docker Hub中99%镜像都是从这个基础镜像过来的 FROM scratch，然后配置需要的软件和配置来进行构建
 
@@ -1018,5 +1020,459 @@ ENTRYPOINT	# 指定这个容器启动的时候要运行的命令	可以追加命
 
 通过这种方式 docker run 容器id -l 不会报错 最终运行的命令是 ls -al
 
+### 实战：Tomcat镜像
+
+1. 准备镜像文件 tomcat 压缩包 jdk压缩包
+2. 编写dockerfile文件 官方命名Dockerfile build会自动寻找这文件 不需要加-f
+
+```shell
+FROM centos
+MAINTAINER linzi<linzi_jxw@163.com>
+
+COPY readme.txt /usr/local/readme.txt
+ADD jdk-8u271-linux-x64.tar.gz /usr/local
+ADD apache-tomcat-9.0.39.tar.gz /usr/local 
+
+RUN yum -y install vim 
+
+ENV MYPATH /usr/local
+WORKDIR $MYPATH
+
+ENV JAVA_HOME /usr/local/jdk1.8.0_271
+ENV CLASSPATH $JAVA_HOME/lib/dt.jar:$JAVAHOME/lib/tools.jar
+ENV CATALINA_HOME /usr/local/apache-tomcat-9.0.39
+ENV CATALINA_BASE /usr/local/apache-tomcat-9.0.39
+ENV PATH $PATH:$JAVA_HOME/bin:$CATALINA_HOME/lib:$CATALINA_HOME/bin
+
+EXPOSE 8080
+CMD /usr/local/apache-tomcat-9.0.39/bin/startup.sh && tail -F /usr/local/apache-tomcat-9.0.39/bin/logs/catalina.out
+# 需要注意docker中 如果没有前台进程 docker将stop 因此需要加 tail -F 或者加上/bin/bash
+```
+
+3. 构建镜像
+
+    `docker build -f Dockerfile -t diytomcat:0.1 .`
+
+    
+
+#### 发布镜像到DockerHub
+
+1. 注册账号
+
+2. 登录账号 `docker login -u USERNAME -p PASSWORD`
+
+3. 登录完毕后可以提交镜像了 `docker push 镜像名:版本号`
+
+    
+
 ## Docker 网络
+
+### 理解Docker0
+
+![image-20201109114034788](Docker.assets/image-20201109114034788.png)
+
+```shell
+# 问题 docker是如何处理容器网络访问的？
+
+root@localhost ~$ docker run -d -P --name tomcat01 tomcat
+#查看容器的内部网络地址 ip addr 发现容器启动的时候会得到一个eth0@if65网卡 docker分配的
+root@localhost ~$ docker exec -it 2bdba8063f3df0710317302560f1066c391fe60990eaabee096ac0055e58679d ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+64: eth0@if65: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+
+```
+
+**原理：**
+
+1. 我们每启动一个docker容器，docker就会给docker容器分配一个ip,我们只要安装了docker，就会有一个网卡docker0，桥接模式 使用的技术是evth-pair技术
+
+    ![image-20201109115607817](Docker.assets/image-20201109115607817.png)
+
+这些if64网卡是宿主机中的 这些网卡是一对对的 evth-pair 就是一对的虚拟设备接口 它们都是成对出现的，一端连着协议，一端彼此相连 真是因为有这个特性，evth-pair充当一个桥梁，连接各种虚拟网络设备
+
+tomcat01 和tomcat02是相互之间可以ping通的 具体过程如下：
+
+![image-20201109130640123](Docker.assets/image-20201109130640123.png)
+
+结论：tomcat01 和 tomcat02 是公用一个路由器 docker0
+
+所有容器不指定网络的情况下，都是默认使用docker0来路由的，docker会给我们的容器分配一个默认的可用IP
+
+Docker中所有的网络接口都是虚拟的。虚拟的转发效率高。
+
+只要容器删除，对应网桥也会被删除
+
+### --link
+
+场景：我们编写了一个微服务 database url=ip  项目部重启，数据库ip换掉了，我们希望可用处理这个问题，可用根据名字来进行访问容器？
+
+```shell
+root@localhost ~$ docker run -d -P --name tomcat01 tomcat
+86fe1906f57de4f6c61bc7cfa86901a3fb9f834f56d0df5e3db28c9b4f1c10a2
+root@localhost ~$ docker run -d -P --name tomcat02 tomcat
+46cd80e0d869549e96337d3ba8dfd309cdf5684de589300afade7d2316fcdeb9
+root@localhost ~$ docker exec -it tomcat01 ping tomcat02	# 不能直接ping通
+ping: tomcat02: No address associated with hostname
+root@localhost ~$ 
+
+# 如何解决呢？
+root@localhost ~$ docker run -d -P --name tomcat03 --link tomcat02 tomcat
+86f2d8ffb2239124b526eff0c73c055e82bbb3283fbf3177e36bf07c5f7b9a9a
+root@localhost ~$ docker exec -it tomcat03 ping tomcat02
+PING tomcat02 (172.17.0.3) 56(84) bytes of data.
+64 bytes from tomcat02 (172.17.0.3): icmp_seq=1 ttl=64 time=0.091 ms
+64 bytes from tomcat02 (172.17.0.3): icmp_seq=2 ttl=64 time=0.162 ms
+# 通过使用 --link 技术 tomcat03 可用直接ping通tomcat02
+# 但是反过来 tomcat02 ping不同tomcat03
+root@localhost ~$ docker exec -it tomcat02 ping tomcat03
+ping: tomcat03: No address associated with hostname
+
+
+# 原因是在tomcat03 的 /etc/hosts中配置了别名
+root@localhost ~$ docker exec -it tomcat03 cat /etc/hosts
+127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+fe00::0	ip6-localnet
+ff00::0	ip6-mcastprefix
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters
+172.17.0.3	tomcat02 46cd80e0d869
+172.17.0.4	86f2d8ffb223
+
+#且在 docker inspect tomcat03 中有如下的配置
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "default",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "CapAdd": null,
+            "CapDrop": null,
+            "Capabilities": null,
+            "Dns": [],
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": [
+                "/tomcat02:/tomcat03/tomcat02"
+            ],
+
+
+# 而在tomcat02 中没有配置
+root@localhost ~$ docker exec -it tomcat02 cat /etc/hosts
+127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+fe00::0	ip6-localnet
+ff00::0	ip6-mcastprefix
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters
+172.17.0.3	46cd80e0d869
+
+```
+
+**--link 就是在我们的hosts中配置中增加一个172.17.0.3	tomcat02 46cd80e0d869**
+
+**我们现在玩Docker已经不建议使用 --link 了，使用自定义网络而不使用docker0**
+
+docker0存在的问题：不支持容器名连接访问
+
+### docker network命令扩展扩展：
+
+```shell 
+# 查看docker网络信息
+root@localhost ~$ docker network list
+NETWORK ID          NAME                DRIVER              SCOPE
+0ac9c4fd5e2d        bridge              bridge              local
+11b246360497        host                host                local
+f4f425c05851        none                null                local
+
+# 查看docker0网卡信息
+root@localhost ~$ docker network inspect 0ac9c4fd5e2d
+[
+    {
+        "Name": "bridge",
+        "Id": "0ac9c4fd5e2d4b1d6d702edde2508dbc0262b94fa4135df57a1e32c5f989eb2a",
+        "Created": "2020-11-02T07:32:37.875355138+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": [
+                {
+                    "Subnet": "172.17.0.0/16",
+                    "Gateway": "172.17.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "46cd80e0d869549e96337d3ba8dfd309cdf5684de589300afade7d2316fcdeb9": {
+                "Name": "tomcat02",
+                "EndpointID": "bb6b7540cbe8d407a230642dc11530b6a366c6f4afa134fce47242cf22fb31ae",
+                "MacAddress": "02:42:ac:11:00:03",
+                "IPv4Address": "172.17.0.3/16",
+                "IPv6Address": ""
+            },
+            "86f2d8ffb2239124b526eff0c73c055e82bbb3283fbf3177e36bf07c5f7b9a9a": {
+                "Name": "tomcat03",
+                "EndpointID": "538a26145d0acc2d77ccf28b07e66fbf23a4fd3c9450595ce14d738fb7e979f6",
+                "MacAddress": "02:42:ac:11:00:04",
+                "IPv4Address": "172.17.0.4/16",
+                "IPv6Address": ""
+            },
+            "86fe1906f57de4f6c61bc7cfa86901a3fb9f834f56d0df5e3db28c9b4f1c10a2": {
+                "Name": "tomcat01",
+                "EndpointID": "b70ffa4c908481c7e0fe8d4a14dc8199f82edb0e8f20976c9bf86b14f8bda37c",
+                "MacAddress": "02:42:ac:11:00:02",
+                "IPv4Address": "172.17.0.2/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {
+            "com.docker.network.bridge.default_bridge": "true",
+            "com.docker.network.bridge.enable_icc": "true",
+            "com.docker.network.bridge.enable_ip_masquerade": "true",
+            "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
+            "com.docker.network.bridge.name": "docker0",
+            "com.docker.network.driver.mtu": "1500"
+        },
+        "Labels": {}
+    }
+]
+
+```
+
+`docker network list` 可以查看docker中的网卡
+
+可以通过`docker network inspect <networkid>`
+
+### 自定义网络
+
+查看所有的docker网络
+
+```shell
+root@localhost ~$ docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+0ac9c4fd5e2d        bridge              bridge              local
+11b246360497        host                host                local
+f4f425c05851        none                null                local
+
+```
+
+**网络模式：**
+
+bridge: 桥接 docker(默认 自己创建的也使用这种模式)
+
+none: 不配置网络
+
+host: 和宿主机共享网络
+
+container:容器内网络连通（用得少 局限很大）
+
+```shell
+# 我们之前直接启动的 默认使用 --net bridge 这个就是我们的docker0
+root@localhost ~$ docker run -d -P --name tomcat01 --net bridge tomcat
+
+# docker0特点：默认不能通过域名访问 需要借助 --link
+
+# 我们自己创建
+docker network create --driver bridge --subnet 192.168.0.0/16 --gateway 192.168.0.1 mynet
+
+root@localhost ~$ docker network create --driver bridge --subnet 192.168.0.0/16 --gateway 192.168.0.1 mynet
+2cc7cbcc7aaad2add2bc9f33c9ba372119d3722e125bb444abb55b982d416665
+root@localhost ~$ docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+0ac9c4fd5e2d        bridge              bridge              local
+11b246360497        host                host                local
+2cc7cbcc7aaa        mynet               bridge              local
+f4f425c05851        none                null                local
+
+
+root@localhost ~$ docker run -d -P --name tomcat01 --net mynet tomcat
+5e630edc6b7eba964c49cb4579bf8c4ea9c1ecc9975252b74fb6b84d2745aeb9
+root@localhost ~$ docker run -d -P --name tomcat02 --net mynet tomcat
+b9aa714ad3abd6758ea6cd0803a3f74e5e54275b348e178b45040768f1c20b10
+root@localhost ~$ docker network inspect mynet
+[
+    {
+        "Name": "mynet",
+        "Id": "2cc7cbcc7aaad2add2bc9f33c9ba372119d3722e125bb444abb55b982d416665",
+        "Created": "2020-11-03T01:34:09.814100843+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "192.168.0.0/16",
+                    "Gateway": "192.168.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "5e630edc6b7eba964c49cb4579bf8c4ea9c1ecc9975252b74fb6b84d2745aeb9": {
+                "Name": "tomcat01",
+                "EndpointID": "72e77a7d1ae6b0499f2433cc3ad09f64085c55ff58f6669d58f5a6df0c924b41",
+                "MacAddress": "02:42:c0:a8:00:02",
+                "IPv4Address": "192.168.0.2/16",
+                "IPv6Address": ""
+            },
+            "b9aa714ad3abd6758ea6cd0803a3f74e5e54275b348e178b45040768f1c20b10": {
+                "Name": "tomcat02",
+                "EndpointID": "867819eeffe8db9285b07af4a1a4fd658e15c242b4c8759455db92397da4506f",
+                "MacAddress": "02:42:c0:a8:00:03",
+                "IPv4Address": "192.168.0.3/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {},
+        "Labels": {}
+    }
+]
+
+# 不能再做其他修改 就可以在tomcat01 中ping tomcat02 不用再使用--link
+root@localhost ~$ docker exec -it tomcat01 ping tomcat02
+PING tomcat02 (192.168.0.3) 56(84) bytes of data.
+64 bytes from tomcat02.mynet (192.168.0.3): icmp_seq=1 ttl=64 time=0.414 ms
+64 bytes from tomcat02.mynet (192.168.0.3): icmp_seq=2 ttl=64 time=0.144 ms
+64 bytes from tomcat02.mynet (192.168.0.3): icmp_seq=3 ttl=64 time=0.092 ms
+```
+
+
+
+不同集群使用不同的网络，保证集群是安全的健康的
+
+redis 
+
+mysql
+
+
+
+### 网络连通
+
+![image-20201109153124777](Docker.assets/image-20201109153124777.png)
+
+如何从一个子网连到另外一个子网
+
+![image-20201109153729078](Docker.assets/image-20201109153729078.png)
+
+
+
+![image-20201109154351446](Docker.assets/image-20201109154351446.png)
+
+```shell
+# tomcat01 如何访问到 tomcat-net-01 呢？
+root@localhost ~$ docker network connect
+"docker network connect" requires exactly 2 arguments.
+See 'docker network connect --help'.
+
+Usage:  docker network connect [OPTIONS] NETWORK CONTAINER
+
+Connect a container to a network
+root@localhost ~$ docker network connect mynet tomcat-01
+
+# 然后使用 docker network inspect mynet 发现 tomcat01 被加入到mynet 且分配了192.168.0.4
+# 也就是 tomcat01 有2个ip地址
+# 连通之后将是将tomcat01 加入到mynet网络下中 一个容器2个ip
+```
+
+
+
+### 实战：部署Redis集群
+
+![image-20201109155905464](Docker.assets/image-20201109155905464.png)
+
+```shell
+# 创建redis集群网卡
+docker network create --driver bridge --subnet 172.38.0.0/16 --gateway 172.38.0.1 redisnet
+
+#编写脚本来启动 6 个redis配置
+
+for port in $(seq 1 6);\
+do\
+mkdir -p /mydata/redis/node-${port}/conf
+touch /mydata/redis/node-${port}/conf/redis.conf
+cat << EOF >/mydata/redis/node-${port}/conf/redis.conf
+port 6379
+bind 0.0.0.0
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+cluster-announce-ip 172.38.0.1${port}
+cluster-announce-port 6379
+cluster-announce-bus-port 16379
+appendonly yes
+EOF
+done
+
+```
+
+![image-20201109160817398](Docker.assets/image-20201109160817398.png)
+
+![image-20201109160935288](Docker.assets/image-20201109160935288.png)
+
+使用docker搭建redis集群速度非常快
+
+## Docker私有仓库
+
+```shell
+# 搜索镜像
+docker search registry
+
+# 拉取镜像
+docker pull registry
+
+# 创建容器
+docker run -d -p 5000:5000 registry
+
+# 配置私有仓库地址
+vim /etc/docker/daemon.json
+{
+	"insecure-registries":["127.0.0.1:5000"]
+}
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 启动本地仓库容器
+docker start 容器id
+
+# 访问私有仓库
+127.0.0.1:5000/v2/_catalog
+```
 
